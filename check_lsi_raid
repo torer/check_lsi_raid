@@ -496,6 +496,20 @@ sub getPhysicalDevices{
 	push @{$commands_a}, $command;
 
 	my @output = `$command`;
+
+# Adding support for drive mounted in back slont, for example /c0/s4 (instaf od /c0/e8/s4)
+# Works with supermicro Rear 2 X 2.5" HDD kit for 826B series chassis in SuperChassis 826BE1C-R920LPB
+	my $command1= $storcli;
+        if(scalar(@physDevices) == 0) { $command1 .= "/sall"; }
+        elsif(scalar(@physDevices) == 1) { $command1 .= "/s$physDevices[0]"; }
+        else { $command1 .= "/s".join(",", @physDevices); }
+        $command1 .= " show $action";
+        push @{$commands_a}, $command1;
+
+        my @output1 = `$command1`;
+	push @output,@output1;
+
+
 	my @foundDevs;
 	if(checkCommandStatus(\@output)){
 		if($action eq "all") {
@@ -503,14 +517,14 @@ sub getPhysicalDevices{
 			my $line_ref;
 			foreach my $line(@output){
 				my @splittedLine;
-				if($line =~ /^Drive \/(c[0-9]*\/e[0-9]*\/s[0-9]*) \:$/){
+				if($line =~ /^Drive \/(c[0-9]*(\/e[0-9]*)?\/s[0-9]*) \:$/){
 					$currBlock = $1;
 					$line_ref = {};
 					next;
 				}
 				if(defined($currBlock)){
 					# If a drive is not in a group, a - is at the DG column
-					if($line =~ /^\d+\:\d+\s+\d+\s+\w+\s+[0-9-F]+.*/){
+					if($line =~ /^(\d+| )\:\d+\s+\d+\s+\w+\s+[0-9-F]+.*/){
 						@splittedLine = map { s/^\s*//; s/\s*$//; $_; } split(/\s+/,$line);
 						# The current block is the c0/e252/s0 name
 						$line_ref->{'pd'} = $currBlock;
@@ -571,12 +585,13 @@ sub getPhysicalDevices{
 			}
 		}
 		# Now we check if a drive is not attached, error code 46
-		my $failed_pattern = 'c[0-9]*\/e[0-9]*\/s[0-9]*\s+Failure\s+46';
+		my $failed_pattern = 'c[0-9]*(\/e[0-9]*)?\/s[0-9]*\s+Failure\s+46';
 		if(my @match = grep { /$failed_pattern/ } @output){
-			$match[0] =~ /(c[0-9]*\/e[0-9]*\/s[0-9]*)/;
+			$match[0] =~ /(c[0-9]*(\/e[0-9]*)?\/s[0-9]*)/;
 			my $dev = {};
 			$dev->{'pd'} = $1;
 			$dev->{'Detailed Status'} = 'Failure-46';
+			print "$dev \n";
 			push @foundDevs, $dev;
 		}
 	}
@@ -588,6 +603,7 @@ sub getPhysicalDevices{
 		print "Invalid StorCLI command! ($command)\n";
 		exit(STATE_UNKNOWN);
 	}
+	#print join(", ", @foundDevs);
 	return \@foundDevs;
 }
 
@@ -1322,7 +1338,6 @@ MAIN: {
 	my $PDDevicesToCheck = getPhysicalDevices($storcli, \@enclosures, \@physDevices, 'all', $verboseCommands_a);
 	my $PDInitToCheck = getPhysicalDevices($storcli, \@enclosures, \@physDevices, 'initialization', $verboseCommands_a);
 	my $PDRebuildToCheck = getPhysicalDevices($storcli, \@enclosures, \@physDevices, 'rebuild', $verboseCommands_a);
-
 	getControllerStatus(\@statusLevel_a, $controllerToCheck);
 	getLDStatus(\@statusLevel_a, $LDDevicesToCheck);
 	getLDStatus(\@statusLevel_a, $LDInitToCheck);
