@@ -603,7 +603,6 @@ sub getPhysicalDevices{
 		print "Invalid StorCLI command! ($command)\n";
 		exit(STATE_UNKNOWN);
 	}
-	#print join(", ", @foundDevs);
 	return \@foundDevs;
 }
 
